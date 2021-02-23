@@ -33,6 +33,8 @@ class SkkEngine : IBus.Engine {
     bool lookup_table_visible;
 
     bool show_annotation;
+    
+    IBus.LookupTable completion_table;
 
     IBus.Property input_mode_prop;
     IBus.PropList prop_list;
@@ -54,6 +56,14 @@ class SkkEngine : IBus.Engine {
             lookup_table.set_label (i, text);
         }
         lookup_table.set_orientation (IBus.Orientation.HORIZONTAL);
+
+        var completion_table_size = 4; // todo:tmp
+        completion_table = new IBus.LookupTable (4, 0, true, false);
+        completion_table.set_orientation (IBus.Orientation.VERTICAL);
+        var empty_label = new IBus.Text.from_static_string ("");
+        for (var i = 0; i < completion_table_size; i++) {
+            completion_table.set_label (i, empty_label);
+        }
 
         // Prepare the properties on the lang bar
         prop_list = new IBus.PropList ();
@@ -139,6 +149,15 @@ class SkkEngine : IBus.Engine {
         context.candidates.notify["cursor-pos"].connect (() => {
                 set_lookup_table_cursor_pos ();
             });
+        context.completions.expanded.connect (() => {
+            expand_completion_table ();
+        });
+        context.completions.index_moved.connect (() => {
+            update_completion_table ();
+        });
+        context.completions.cleared.connect (() => {
+            clear_completion_table ();
+        });
         context.candidates.selected.connect (() => {
                 var output = context.poll_output ();
                 if (output.length > 0) {
@@ -154,6 +173,7 @@ class SkkEngine : IBus.Engine {
 
         update_candidates ();
         update_input_mode ();
+        update_completion_table ();
         context.retrieve_surrounding_text.connect (_retrieve_surrounding_text);
         context.delete_surrounding_text.connect (_delete_surrounding_text);
     }
@@ -204,6 +224,42 @@ class SkkEngine : IBus.Engine {
             hide_auxiliary_text ();
             lookup_table_visible = false;
         }
+    }
+
+    void expand_completion_table () {
+        for (int i = (int) completion_table.get_number_of_candidates ();
+             i < context.completions.current_size;
+             i++)
+        {
+            completion_table.append_candidate (
+                new IBus.Text.from_string(context.completions[i]));
+        }
+        update_lookup_table_fast (completion_table, true);
+        var comp_idx = context.completions.cursor_pos;
+        update_completion_count_text (comp_idx + 1);
+    }
+
+    void update_completion_table () {
+        var comp_idx = context.completions.cursor_pos;
+        if (comp_idx >= 0) {
+            completion_table.set_cursor_pos (comp_idx);
+            update_lookup_table_fast (completion_table, true);
+            update_completion_count_text (comp_idx + 1);
+        }
+    }
+
+    void update_completion_count_text (int pos) {
+        var total = context.completions.total_size;
+        var total_str = (total > 0) ? total.to_string () : "???";
+        var pos_str = (pos > 0) ? pos.to_string () : "-";
+        var aux_text = new IBus.Text.from_string (@"[ $pos_str / $total_str ]");
+        update_auxiliary_text (aux_text, true);
+    }
+
+    void clear_completion_table () {
+        hide_lookup_table ();
+        hide_auxiliary_text ();
+        completion_table.clear ();
     }
 
     void update_preedit () {
